@@ -1,0 +1,105 @@
+---
+# 1. STORAGE LAYER: Persistent Volume Claim for Qdrant Vector DB
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qdrant-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi  # Keeps your vector embeddings safe if the pod restarts
+---
+# 2. DATABASE DEPLOYMENT: Qdrant Vector Database Engine
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qdrant-db
+  labels:
+    app: qdrant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qdrant
+  template:
+    metadata:
+      labels:
+        app: qdrant
+    spec:
+      containers:
+        - name: qdrant
+          image: qdrant/qdrant:latest
+          ports:
+            - containerPort: 6333
+              name: http-api
+          volumeMounts:
+            - mountPath: /qdrant/storage
+              name: qdrant-storage
+      volumes:
+        - name: qdrant-storage
+          persistentVolumeClaim:
+            claimName: qdrant-pvc
+---
+# 3. DATABASE SERVICE: Internal Networking for Qdrant
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant-service
+spec:
+  type: ClusterIP  # Keeps the database completely hidden from the outside world
+  ports:
+    - port: 6333
+      targetPort: 6333
+  selector:
+    app: qdrant
+---
+# 4. PRESENTATION LAYER DEPLOYMENT: Streamlit Python App Frontend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamlit-app
+  labels:
+    app: streamlit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: streamlit
+  template:
+    metadata:
+      labels:
+        app: streamlit
+    spec:
+      containers:
+        - name: web-ui
+          image: streamlit-rag-app:latest # Your containerized python script
+          imagePullPolicy: IfNotPresent  # <--- THIS SPECIFIC LINE FIXES THE INTERNET DOWNLOAD ERROR
+          ports:
+            - containerPort: 8501
+          env:
+            # Tell your Python script exactly where to find the Vector DB securely
+            - name: QDRANT_HOST
+              value: "http://qdrant-service:6333"
+            # If using Cloud API (Gemini/OpenAI) instead of local inference
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-secrets
+                  key: api-key
+---
+# 5. PRESENTATION LAYER SERVICE: Exposing Streamlit Web UI
+apiVersion: v1
+kind: Service
+metadata:
+  name: streamlit-service
+spec:
+  type: NodePort  # Allows network routing to view the app via a port mapping
+  ports:
+    - port: 8501
+      targetPort: 8501
+      nodePort: 30501
+  selector:
+    app: streamlit
+
