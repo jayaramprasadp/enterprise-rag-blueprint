@@ -1,4 +1,6 @@
 import os
+import uuid
+import gc
 import streamlit as st
 
 # Direct FastEmbed and Hugging Face to read from your pre-baked image cache
@@ -27,7 +29,7 @@ def init_engines():
 
 qdrant_client, dense_engine, sparse_engine = init_engines()
 
-# FIX: Explicitly name the dense vector configuration dictionary key as "default"
+# Setup named multi-vector collection
 try:
     if not qdrant_client.collection_exists(COLLECTION_NAME):
         qdrant_client.create_collection(
@@ -73,8 +75,11 @@ if uploaded_file is not None:
                     values=sparse_vectors[i].values.tolist()
                 )
                 
+                # MODIFICATION: Using Universally Unique Identifiers (UUIDs) prevents file overwrites
+                unique_point_id = str(uuid.uuid4())
+                
                 points.append(models.PointStruct(
-                    id=i,
+                    id=unique_point_id,
                     vector={
                         "default": dense_vectors[i].tolist(),
                         "text-sparse": sparse_val
@@ -87,7 +92,11 @@ if uploaded_file is not None:
                 ))
             
             qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
-            st.sidebar.success(f"Indexed {len(chunks)} chunks with Hybrid Vectors!")
+            st.sidebar.success(f"Indexed {len(chunks)} chunks with non-colliding storage keys!")
+            
+            # MODIFICATION: Explicit memory flushes prevent memory-bound process freezes
+            del dense_vectors, sparse_vectors, points
+            gc.collect()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -147,4 +156,7 @@ if user_query := st.chat_input("Ask a question about the reference library:"):
             response = model.generate_content(prompt)
             st.markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
-
+            
+            # MODIFICATION: Flush search parameters immediately to keep memory clean
+            del query_dense, query_sparse_raw, query_sparse, query_results
+            gc.collect()
