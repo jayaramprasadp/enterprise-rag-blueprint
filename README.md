@@ -1,4 +1,4 @@
-# 🛡️ Enterprise Air-Gapped GenAI secure Hybrid RAG Architecture
+# 🛡️ Enterprise Air-Gapped GenAI Secure Hybrid RAG Architecture
 
 A production-grade, highly secure, and privacy-focused Hybrid Retrieval-Augmented Generation (RAG) blueprint [1.37]. This decoupled microservices architecture is engineered for enterprise environments where data sovereignty is paramount, ensuring zero data exfiltration risks by utilizing fully containerized local embedding layers paired with role-based database constraints [6.26, 1.37].
 
@@ -36,11 +36,18 @@ When you launch the web portal, look at the **left-hand sidebar panel** labeled 
 ## 🛠️ Infrastructure Deployment Guide (Operator Perspective)
 
 ### 📋 Prerequisites
+* Docker Engine installed locally to support containerisation [5.295].
 * Kubernetes Cluster (e.g., Local **Kind v0.24+** or Managed **Google GKE**) [1.37].
 * `kubectl` CLI installed and connected to the active cluster context [1.37].
 * Google AI Studio developer API Key [1.14].
 
-### 🚀 3-Step Local Deployment
+### 🐳 Docker Architecture & Isolation Mechanics
+To maintain true air-gapped isolation, the container compilation strategy is split into discrete read-only cache layers during `docker build` [5.295]:
+1. **Base Compilation:** Sets up an unprivileged Linux runtime environment with C++ vector math compilers [5.295].
+2. **Offline Weight Baking:** Executes `download_models.py` **during the image building phase** to pull and freeze deep learning neural networks directly into `/app/hf_cache` [5.295].
+3. **Execution Delivery:** Bundles your Python files immutable inside the container layer, ensuring that when the pod runs on Kubernetes, **it has a zero-download footprint and zero public internet requirements** [5.295].
+
+### 🚀 4-Step Local Deployment
 
 #### Step 1: Securely Inject the Cloud API Key Credentials
 Create an encrypted Kubernetes Secret to store your Gemini token securely in the cluster's memory workspace, bypassing any text file exposures:
@@ -48,17 +55,19 @@ Create an encrypted Kubernetes Secret to store your Gemini token securely in the
 kubectl create secret generic ai-secrets --from-literal=api-key="YOUR_ACTUAL_GEMINI_KEY"
 ```
 
-#### Step 2: Compile the Air-Gapped Container Layers
-To compile your custom Python application with the heavy open-source model weights pre-baked into the image disk, build and inject it straight into your cluster's node store:
+#### Step 2: Compile and Build the Docker Layers
+Run the Docker build engine to compile your workspace files and execute your model pre-caches automatically on disk [5.295]:
 ```bash
-# Build the local Docker image layers
 docker build -t streamlit-rag-app:latest .
+```
 
-# Inject the completed bundle directly into your Kind node cache
+#### Step 3: Inject the Local Image into the Cluster
+Because your cluster is air-gapped, skip public container registries and load your custom compiled image directly into your Kind node memory store:
+```bash
 kind load docker-image streamlit-rag-app:latest --name erag-cluster
 ```
 
-#### Step 3: Deploy the Declarative Microservice Manifests
+#### Step 4: Deploy the Declarative Microservice Manifests
 Push your manual multi-tier blueprint manifest file live to your cluster to provision persistent storage, run your isolated database firewall, and start the frontend interface [1.37]:
 ```bash
 kubectl apply -f k8s/rag-stack.yaml
@@ -68,7 +77,7 @@ Verify that all pods successfully transition into a clean, stable state:
 kubectl get pods,pvc,svc
 ```
 
-#### Step 4: Open the Secure Network Tunnel Link
+#### Step 5: Open the Secure Network Tunnel Link
 To route the internal container network interface directly to your local web browser, map the traffic port:
 ```bash
 kubectl port-forward svc/streamlit-service 8501:8501
